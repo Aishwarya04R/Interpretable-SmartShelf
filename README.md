@@ -36,4 +36,4 @@ Due to file size limits, the pre-trained model weights (`.keras`, `.pth`) are ho
 ![Explainable_AI(GRAD&LIME)-vegetable](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Explainable_AI(GRAD&LIME)-vegetable.png)
 ![Explainable_AI(GRAD&LIME)-bakery](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Explainable_AI(GRAD&LIME)-bread.png)
 ![Decay-Cure-and-AI-recommedation](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Decay-Curve-and-AI-recommedation.png)
-![Sustainabilty-feature](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Sustainabilty-feature.png)
+![Sustainabilty-feature](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Sustainability-feature.png)
