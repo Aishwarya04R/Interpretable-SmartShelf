@@ -1,0 +1,13 @@
+streamlit
+tensorflow
+torch
+torchvision
+timm
+opencv-python-headless
+albumentations
+lime
+scikit-image
+plotly
+pandas
+numpy
+Pillow
