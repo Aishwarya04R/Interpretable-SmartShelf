@@ -19,7 +19,7 @@ The system was trained on a stratified dataset of **28,000+ images**.
 
 ## Models
 Due to file size limits, the pre-trained model weights (`.keras`, `.pth`) are hosted externally.
-**[Download Model Weights (Google Drive)](https://drive.google.com/file/d/1vrAQ6Z0Yj07E4MXR8csQAIBTHuOyskm9/view?usp=sharing)**
+**[Download Model Weights (Google Drive)](https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing)**
 
 ## Screenshots
 ![Dashboard](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Dashboard.png)
