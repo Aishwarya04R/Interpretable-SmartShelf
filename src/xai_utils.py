@@ -82,6 +82,11 @@ class ExplainableAI:
                 pred_status = outputs[1]
                 # For Bakery (Regression), we use the output value itself
                 # CRITICAL FIX: Ensure we get a scalar loss for gradients
+                if isinstance(pred_status, (list, tuple)):
+                    pred_status = pred_status[0]
+                elif isinstance(pred_status, dict):
+                    pred_status = list(pred_status.values())[0]
+                    
                 if pred_status.shape[-1] == 1: 
                     loss_status = pred_status[0][0]
                 else: 
