@@ -16,54 +16,20 @@ from datetime import datetime, timedelta
 from tensorflow.keras import layers, models
 import gdown
 
-# --- FUNCTION TO DOWNLOAD AND CACHE MODELS ---
-@st.cache_resource  # VERY IMPORTANT: This stops the app from reloading the model on every click
-def load_model(food_category):
-    if food_category == "Meat":
-        model_path = "EfficientNetB4_Meat_Model.keras"
-        # Extract the ID from your Google Drive shareable link
-        file_id = 'https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing' 
-    elif food_category == "Fruit":
-        model_path = "MobileNetV2_Fruit_Model.h5"
-        file_id = 'https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing'
-    elif food_category == "Bakery":
-        model_path = "Msff_Bread_Model.keras"
-        file_id = 'https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing'
-    elif food_category == "Vegetable":
-        model_path = "EfficientNetB0_Vegetable_Model.pth"
-        file_id = 'https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing'
-    # ... add others ...
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="SmartShelf AI", page_icon="🧬", layout="wide", initial_sidebar_state="collapsed")
 
-    # Download if it doesn't exist locally on the server
-    if not os.path.exists(model_path):
-        with st.spinner(f"Downloading {food_category} model... (This happens only once)"):
-            url = f'https://drive.google.com/uc?id={file_id}'
-            gdown.download(url, model_path, quiet=False)
-            
-    # Load the model
-    model = tf.keras.models.load_model(model_path)
-    return model
-
-# --- YOUR APP LOGIC ---
-st.title("Interpretable SmartShelf 🍎🥩")
-option = st.selectbox("Select Food Category", ["Meat", "Fruit", "Vegetable", "Bakery"])
-
-# Only load the model the user selects (Saves RAM!)
-model = load_model(option)
-
-# --- SETUP PATHS ---
-sys.path.append('/content/drive/MyDrive/Shelf_Life_Project/source')
-MODEL_DIR = '/content/drive/MyDrive/Shelf_Life_Project/final_src'
+# --- SETUP LOCAL PATHS ---
+# Add current directory to path so it can find xai_utils and novelty_features on the cloud server
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
 
 try:
     from xai_utils import ExplainableAI
     import novelty_features as nf
 except ImportError as e:
-    st.error(f"Setup Error: {e}. Ensure xai_utils.py and novelty_features.py are in 'source' folder.")
+    st.error(f"Setup Error: {e}. Ensure xai_utils.py and novelty_features.py are in the same folder as app.py on GitHub.")
     st.stop()
-
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="SmartShelf AI", page_icon="🧬", layout="wide", initial_sidebar_state="collapsed")
 
 # ==========================================
 # 1. DEFINE PYTORCH MODEL ARCHITECTURE (VEG)
@@ -104,6 +70,75 @@ def build_msff_regressor(input_shape=(224,224,3)):
     out = layers.Dense(1, activation="linear", name="days_remaining")(x)
     model = models.Model(inp, out, name="MSFF_Regression")
     return model
+
+# ==========================================
+# DYNAMIC MODEL DOWNLOADER & LOADER
+# ==========================================
+@st.cache_resource
+def load_domain_model(category):
+    res = {}
+    os.makedirs("weights", exist_ok=True)
+    
+    if category == "Meat":
+        model_path = "weights/final_smartshelf_model.keras"
+        file_id = 'https://drive.google.com/file/d/1iGbuItsDJYTIlp_mGNu1jB3w1w4aH7Zu/view?usp=sharing' # <-- REPLACE THIS
+        
+        if not os.path.exists(model_path):
+            with st.spinner("Downloading Meat model... (~100MB)"):
+                gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+        
+        res['meat_model'] = tf.keras.models.load_model(model_path, compile=False)
+        # Using hardcoded classes to prevent missing .npy file errors in cloud
+        res['meat_cat'] = ["Beef", "Chicken", "Crab", "Fish", "Mutton", "Pork", "Shrimp"] 
+        res['meat_stat'] = ["Fresh", "Spoiled"]
+        res['meat_xai'] = ExplainableAI(res['meat_model'], res['meat_cat'], backend='tensorflow')
+        
+    elif category == "Veg":
+        model_path = "weights/best_multitask_model3.pth"
+        file_id = 'https://drive.google.com/file/d/1vrAQ6Z0Yj07E4MXR8csQAIBTHuOyskm9/view?usp=sharing' # <-- REPLACE THIS
+        
+        if not os.path.exists(model_path):
+            with st.spinner("Downloading Vegetable model..."):
+                gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+        
+        checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+        veg_classes = ['Carrot', 'Cucumber', 'Tomato', 'Potato', 'Brinjal', 'Capsicum']
+        veg_model = MultiHeadEfficientNet(num_veg_classes=len(veg_classes))
+        veg_model.load_state_dict(checkpoint["model"])
+        veg_model.eval()
+        res['veg_model'] = veg_model
+        res['veg_classes'] = veg_classes
+        res['veg_fresh_classes'] = ['Fresh', 'Mid', 'Spoiled']
+        res['veg_xai'] = ExplainableAI(veg_model, veg_classes, backend='pytorch')
+
+    elif category == "Bakery":
+        model_path = "weights/msff_bread_model.keras"
+        file_id = 'https://drive.google.com/file/d/1BKFj01kMBeF7zhOo-ew5dMQkPqEBDWPo/view?usp=sharing' # <-- REPLACE THIS
+        
+        if not os.path.exists(model_path):
+            with st.spinner("Downloading Bakery model..."):
+                gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+        try:
+            res['bakery_model'] = tf.keras.models.load_model(model_path, compile=False)
+        except:
+            model = build_msff_regressor()
+            model.load_weights(model_path)
+            res['bakery_model'] = model
+        res['bakery_xai'] = ExplainableAI(res['bakery_model'], ['Bread'], backend='tensorflow')
+
+    elif category == "Fruit":
+        model_path = "weights/fruit_shelf_life_model.h5"
+        file_id = 'https://drive.google.com/file/d/1dcb2XG7fAQBcwdm0Otl3R88Llbw800C8/view?usp=sharing' # <-- REPLACE THIS
+        
+        if not os.path.exists(model_path):
+            with st.spinner("Downloading Fruit model..."):
+                gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+                
+        res['fruit_model'] = tf.keras.models.load_model(model_path, compile=False)
+        res['fruit_classes'] = ["Apple", "Banana", "Guava", "Orange", "Pomegranate", "Strawberry"]
+        res['fruit_xai'] = ExplainableAI(res['fruit_model'], res['fruit_classes'], backend='tensorflow')
+
+    return res
 
 # --- CUSTOM CSS FOR DASHBOARD ---
 st.markdown("""
@@ -194,78 +229,8 @@ def navigate_to(page):
     st.session_state['page'] = page
     st.rerun()
 
-# --- LOAD RESOURCES ---
-@st.cache_resource
-def load_resources():
-    resources = {}
-
-    # 1. MEAT MODEL (TensorFlow)
-    tf_path = os.path.join(MODEL_DIR, "final_smartshelf_model.keras")
-    if os.path.exists(tf_path):
-        resources['meat_model'] = tf.keras.models.load_model(tf_path)
-        resources['meat_cat'] = np.load(os.path.join(MODEL_DIR, "classes_category.npy"), allow_pickle=True)
-        resources['meat_stat'] = np.load(os.path.join(MODEL_DIR, "classes_status.npy"), allow_pickle=True)
-        resources['meat_xai'] = ExplainableAI(resources['meat_model'], resources['meat_cat'], backend='tensorflow')
-
-    # 2. VEG MODEL (PyTorch)
-    pth_path = os.path.join(MODEL_DIR, "best_multitask_model3 (1).pth")
-    if os.path.exists(pth_path):
-        try:
-            checkpoint = torch.load(pth_path, map_location=torch.device('cpu'))
-            veg_map = checkpoint.get("veg_map")
-            if not veg_map:
-                veg_classes = ['Carrot', 'Cucumber', 'Tomato', 'Potato', 'Brinjal', 'Capsicum']
-            else:
-                veg_classes = [k for k, v in sorted(veg_map.items(), key=lambda item: item[1])]
-
-            veg_model = MultiHeadEfficientNet(num_veg_classes=len(veg_classes))
-            veg_model.load_state_dict(checkpoint["model"])
-            veg_model.eval()
-
-            resources['veg_model'] = veg_model
-            resources['veg_classes'] = veg_classes
-            resources['veg_fresh_classes'] = ['Fresh', 'Mid', 'Spoiled']
-            resources['veg_xai'] = ExplainableAI(veg_model, veg_classes, backend='pytorch')
-        except Exception as e:
-            print(f"Failed to load PyTorch model: {e}")
-
-    # 3. BAKERY MODEL (TensorFlow/Keras)
-    bakery_path = os.path.join(MODEL_DIR, "msff_bread_model.keras")
-    if os.path.exists(bakery_path):
-        try:
-            try:
-                resources['bakery_model'] = tf.keras.models.load_model(bakery_path)
-            except:
-                model = build_msff_regressor()
-                model.load_weights(bakery_path)
-                resources['bakery_model'] = model
-
-            resources['bakery_classes'] = ['Bread']
-            resources['bakery_xai'] = ExplainableAI(resources['bakery_model'], ['Bread'], backend='tensorflow')
-        except Exception as e:
-             print(f"Failed to load Bakery model: {e}")
-
-    # 4. FRUIT MODEL (TensorFlow/Keras)
-    fruit_path = "/content/drive/MyDrive/Shelf_Life_Project/final_src/fruit_shelf_life_model.h5"
-    if os.path.exists(fruit_path):
-        try:
-             # compile=False helps avoid issues with custom metrics/losses from older Keras versions
-             resources['fruit_model'] = tf.keras.models.load_model(fruit_path, compile=False)
-             resources['fruit_classes'] = ["Apple", "Banana", "Guava", "Orange", "Pomegranate", "Strawberry"]
-             resources['fruit_xai'] = ExplainableAI(resources['fruit_model'], resources['fruit_classes'], backend='tensorflow')
-             print("SUCCESS: Fruit model loaded!")
-        except Exception as e:
-             print(f"Failed to load Fruit model: {e}")
-    else:
-         print(f"CRITICAL ERROR: Fruit model file missing at {fruit_path}")
-
-    return resources
-
-res = load_resources()
-
 # --- HELPER FUNCTIONS ---
 def get_img_as_base64(file_path):
-    """Converts local image to base64 string for HTML embedding"""
     if not os.path.exists(file_path):
         return ""
     with open(file_path, "rb") as f:
@@ -282,21 +247,12 @@ def preprocess_image(image):
 
 def preprocess_torch(image):
     if image.mode != 'RGB': image = image.convert('RGB')
-
-    # 1. Create a LARGE copy for Display/XAI (this fixes the blur)
     img_display = image.resize((380, 380))
-
-    # 2. Create a SMALL copy for the Model (must match training size)
     img_model = image.resize((96, 96))
-
-    # 3. Process only the small one for the AI
     arr = np.array(img_model).astype(np.float32) / 255.0
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
     arr = (arr - mean) / std
-
-    # 4. Return the PROCESSED small image for the model,
-    #    but the HIGH-RES display image for XAI
     return arr, np.array(img_display)
 
 def preprocess_bakery(image):
@@ -306,12 +262,10 @@ def preprocess_bakery(image):
     return np.expand_dims(arr, axis=0), np.array(img)
 
 def preprocess_fruit(image):
-    # FIXED: Convert RGB to BGR for Fruit Model
     if image.mode != 'RGB': image = image.convert('RGB')
     img_arr = np.array(image)
     if img_arr.ndim == 2: img_arr = cv2.cvtColor(img_arr, cv2.COLOR_GRAY2RGB)
     if img_arr.shape[-1] == 4: img_arr = img_arr[..., :3]
-
     img_bgr = cv2.cvtColor(img_arr, cv2.COLOR_RGB2BGR)
     img_resized = cv2.resize(img_bgr, (160, 160))
     arr = img_resized.astype(np.float32) / 255.0
@@ -341,10 +295,11 @@ def render_home():
 
     col1, col2, col3, col4 = st.columns(4)
 
-    path_meat = "/content/drive/MyDrive/Shelf_Life_Project/final_src/meat.png"
-    path_fruit = "/content/drive/MyDrive/Shelf_Life_Project/final_src/fruits.png"
-    path_veg = "/content/drive/MyDrive/Shelf_Life_Project/final_src/vegetables.png"
-    path_bakery = "/content/drive/MyDrive/Shelf_Life_Project/final_src/bakery.png"
+    # UPDATED PATHS for GitHub compatibility
+    path_meat = "SmarShelf-Assets/meat.png"
+    path_fruit = "SmarShelf-Assets/fruits.png"
+    path_veg = "SmarShelf-Assets/vegetables.png"
+    path_bakery = "SmarShelf-Assets/bakery.png"
 
     b64_meat = get_img_as_base64(path_meat)
     b64_fruit = get_img_as_base64(path_fruit)
@@ -409,38 +364,26 @@ def render_home():
     st.markdown("---")
     c1, c2, c3 = st.columns(3)
     c1.metric("System Status", "Online ✅")
-    c2.metric("Models Active", "4") # Meat + Veg + Bakery + Fruit
+    c2.metric("Models Active", "4") 
     c3.metric("Last Update", datetime.now().strftime("%B %d, %Y"))
 
 # --- PAGE: MEAT MODULE ---
 def render_meat_page():
-    # Header with Back Navigation
     c_back, c_title = st.columns([1, 8])
     with c_back:
         if st.button("⬅ Home"): navigate_to("home")
     with c_title:
         st.markdown("## 🥩 Meat & Seafood Analysis")
 
-    if 'meat_model' not in res:
-        st.error("Model not found in `final_src`. Please verify files.")
-        return
-
-    model = res['meat_model']
-    cat_classes = res['meat_cat']
-    stat_classes = res['meat_stat']
-    xai = res['meat_xai']
+    res = load_domain_model("Meat")
+    model, cat_classes, stat_classes, xai = res['meat_model'], res['meat_cat'], res['meat_stat'], res['meat_xai']
 
     c_side, c_main = st.columns([1, 2])
 
     with c_side:
         st.markdown("### Input Source")
         mode = st.radio("Select:", ["Upload Image", "Live Camera"], label_visibility="collapsed")
-
-        img_file = None
-        if mode == "Upload Image":
-            img_file = st.file_uploader("Upload", type=['jpg','png','jpeg'])
-        else:
-            img_file = st.camera_input("Capture")
+        img_file = st.file_uploader("Upload", type=['jpg','png','jpeg']) if mode == "Upload Image" else st.camera_input("Capture")
 
         if img_file:
             image_pil = Image.open(img_file)
@@ -458,13 +401,12 @@ def render_meat_page():
 
                 cat_idx = np.argmax(preds[0])
                 food_name = cat_classes[cat_idx]
-                conf = np.max(preds[0])
                 stat_idx = np.argmax(preds[1])
                 status = stat_classes[stat_idx]
                 score = float(preds[2][0][0])
 
                 max_life = 5.0
-                if status == 'spoiled': days_left = 0.0; score = 0.1
+                if status == 'Spoiled' or status == 'spoiled': days_left = 0.0; score = 0.1
                 else: days_left = score * max_life
 
                 expiry_str = (datetime.now() + timedelta(days=days_left)).strftime("%b %d")
@@ -474,22 +416,19 @@ def render_meat_page():
                     'food': food_name, 'status': status, 'days': days_left,
                     'score': score, 'grade': grade, 'color': color, 'expiry': expiry_str,
                     'img_pre': img_pre, 'cat_idx': cat_idx, 'stat_idx': stat_idx,
-                    'img_orig': img_orig # Save original for XAI visualization
+                    'img_orig': img_orig 
                 }
                 if 'xai_data' in st.session_state: del st.session_state['xai_data']
 
         if 'meat_res' in st.session_state:
             result = st.session_state['meat_res']
-
             m1, m2, m3 = st.columns(3)
             m1.markdown(f"<div class='metric-container'><h4>Detected</h4><h2 style='color:#1E3A5F'>{result['food'].upper()}</h2></div>", unsafe_allow_html=True)
             m2.markdown(f"<div class='metric-container' style='border-bottom: 5px solid {result['color']}'><h4>Condition</h4><h2 style='color:{result['color']}'>{result['status'].upper()}</h2></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='metric-container'><h4>Shelf Life</h4><h2>{result['days']:.1f} Days</h2><small>Exp: {result['expiry']}</small></div>", unsafe_allow_html=True)
-
             st.markdown("---")
 
             t1, t2, t3 = st.tabs(["📉 Projections", "🧠 Explainable AI", "🌍 Sustainability"])
-
             with t1:
                 col_a, col_b = st.columns([2,1])
                 with col_a: st.plotly_chart(nf.QualityDecayPredictor.predict_decay_curve(result['score'], result['days']), use_container_width=True)
@@ -500,32 +439,26 @@ def render_meat_page():
 
             with t2:
                 st.info("Visualizing decision logic with Grad-CAM and LIME.")
-
                 if 'xai_data' not in st.session_state:
                     if st.button("Generate Deep Explanation (~10s)", use_container_width=True):
                         with st.spinner("Calculating Gradients & Superpixels..."):
-                            hm_food, hm_fresh = xai.grad_cam(result['img_pre'])
-                            focus = xai.analyze_heatmap_focus(hm_fresh)
-                            lime = xai.lime_explanation(result['img_orig'], target_head=1, num_samples=50)
+                            hm_food, hm_fresh = res['meat_xai'].grad_cam(result['img_pre'])
+                            focus = res['meat_xai'].analyze_heatmap_focus(hm_fresh)
+                            lime = res['meat_xai'].lime_explanation(result['img_orig'], target_head=1, num_samples=50)
                             st.session_state['xai_data'] = {'hm': hm_fresh, 'focus': focus, 'lime': lime}
                             st.rerun()
                 else:
                     xd = st.session_state['xai_data']
-                    v_grad = xai.visualize_grad_cam(result['img_pre'], xd['hm'], alpha=0.4)
-                    v_lime = xai.visualize_lime(xd['lime'], result['stat_idx'], num_features=5)
+                    v_grad = res['meat_xai'].visualize_grad_cam(result['img_pre'], xd['hm'], alpha=0.4)
+                    v_lime = res['meat_xai'].visualize_lime(xd['lime'], result['stat_idx'], num_features=5)
 
                     r1, r2 = st.columns(2)
                     with r1:
-                        # FIX: Added clamp=True to prevent range error
                         st.image(v_grad, caption="Grad-CAM (Attention)", use_container_width=True, clamp=True)
-                        grad_text = nf.XAITextGenerator.explain_gradcam(result['food'], result['status'], xd['focus'])
-                        st.markdown(f"<div class='xai-box'>{grad_text}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='xai-box'>{nf.XAITextGenerator.explain_gradcam(result['food'], result['status'], xd['focus'])}</div>", unsafe_allow_html=True)
                     with r2:
-                        # FIX: Added clamp=True to prevent range error
                         st.image(v_lime, caption="LIME Features", use_container_width=True, clamp=True)
-                        lime_text = nf.XAITextGenerator.explain_lime(result['food'], result['status'])
-                        st.markdown(f"<div class='xai-box'>{lime_text}</div>", unsafe_allow_html=True)
-
+                        st.markdown(f"<div class='xai-box'>{nf.XAITextGenerator.explain_lime(result['food'], result['status'])}</div>", unsafe_allow_html=True)
                     if st.button("Reset Explanation"): del st.session_state['xai_data']; st.rerun()
 
             with t3:
@@ -535,64 +468,41 @@ def render_meat_page():
 
 # --- PAGE: VEGETABLE MODULE ---
 def render_veg_page():
-    if st.button("← Back to Dashboard"):
-        navigate_to("home")
-
+    if st.button("← Back to Dashboard"): navigate_to("home")
     st.markdown("## 🥦 Vegetable Quality Analysis")
 
-    if 'veg_model' not in res:
-        st.error("Veg model missing or failed to load. Ensure 'best_multitask_model3 (1).pth' is in `final_src`.")
-        return
-
-    model = res['veg_model']
-    veg_classes = res['veg_classes']
-    fresh_classes = res['veg_fresh_classes']
-    xai = res['veg_xai']
+    res = load_domain_model("Veg")
+    model, veg_classes, fresh_classes, xai = res['veg_model'], res['veg_classes'], res['veg_fresh_classes'], res['veg_xai']
 
     c_side, c_main = st.columns([1, 2])
-
     with c_side:
         st.markdown("### Input Source")
         mode = st.radio("Select:", ["Upload Image", "Live Camera"], label_visibility="collapsed", key="veg_mode")
-
-        img_file = None
-        if mode == "Upload Image":
-            img_file = st.file_uploader("Upload", type=['jpg','png','jpeg'], key="veg_upload")
-        else:
-            img_file = st.camera_input("Capture", key="veg_cam")
+        img_file = st.file_uploader("Upload", type=['jpg','png','jpeg'], key="veg_upload") if mode == "Upload Image" else st.camera_input("Capture", key="veg_cam")
 
         if img_file:
             image_pil = Image.open(img_file)
             st.image(image_pil, caption="Sample", use_container_width=True)
             analyze = st.button("🔬 Analyze Veg", type="primary", use_container_width=True)
-        else:
-            analyze = False
+        else: analyze = False
 
     with c_main:
         if img_file and analyze:
             with st.spinner("🥦 Analyzing Vegetable Freshness..."):
-                # Use CORRECT Preprocessing for Veg (96x96)
                 img_pre, img_orig = preprocess_torch(image_pil)
                 tensor = torch.from_numpy(img_pre).permute(2, 0, 1).unsqueeze(0).float()
 
                 with torch.no_grad():
                     veg_out, fresh_out, reg_out = model(tensor)
-                    veg_probs = torch.softmax(veg_out, dim=1)
-                    veg_idx = torch.argmax(veg_probs).item()
+                    veg_idx = torch.argmax(torch.softmax(veg_out, dim=1)).item()
                     food = veg_classes[veg_idx]
-
-                    fresh_probs = torch.softmax(fresh_out, dim=1)
-                    fresh_idx = torch.argmax(fresh_probs).item()
+                    fresh_idx = torch.argmax(torch.softmax(fresh_out, dim=1)).item()
                     status = fresh_classes[fresh_idx]
-
                     shelf_life = max(0.0, reg_out.item())
 
-                # Logic Fix: Map "Fresh" to High Score
                 score = min(1.0, shelf_life / 14.0)
-                if status == 'Fresh' or status == 'Mid':
-                    score = max(score, 0.45) # Ensure it passes 0.40 threshold for "Do Not Consume"
-                if status == 'Rotten' or status == 'spoiled':
-                    score = 0.1
+                if status == 'Fresh' or status == 'Mid': score = max(score, 0.45) 
+                if status == 'Rotten' or status == 'Spoiled' or status == 'spoiled': score = 0.1
 
                 grade, color = get_grade(score, status)
                 expiry_str = (datetime.now() + timedelta(days=float(shelf_life))).strftime("%b %d")
@@ -600,23 +510,19 @@ def render_veg_page():
                 st.session_state['veg_res'] = {
                     'food': food, 'status': status, 'days': shelf_life,
                     'score': score, 'grade': grade, 'color': color, 'expiry': expiry_str,
-                    'img_pre': img_pre, 'stat_idx': fresh_idx, # Store index for XAI
-                    'img_orig': img_orig # Store original for LIME
+                    'img_pre': img_pre, 'stat_idx': fresh_idx, 'img_orig': img_orig
                 }
                 if 'veg_xai_data' in st.session_state: del st.session_state['veg_xai_data']
 
         if 'veg_res' in st.session_state:
             result = st.session_state['veg_res']
-
             m1, m2, m3 = st.columns(3)
             m1.markdown(f"<div class='metric-container'><h4>Detected</h4><h2 style='color:#1E3A5F'>{result['food']}</h2></div>", unsafe_allow_html=True)
             m2.markdown(f"<div class='metric-container' style='border-bottom: 5px solid {result['color']}'><h4>Condition</h4><h2 style='color:{result['color']}'>{result['status']}</h2></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='metric-container'><h4>Shelf Life</h4><h2>{result['days']:.1f} Days</h2><small>Exp: {result['expiry']}</small></div>", unsafe_allow_html=True)
-
             st.markdown("---")
 
             t1, t2, t3 = st.tabs(["📉 Projections", "🧠 Explainable AI", "🌍 Sustainability"])
-
             with t1:
                 col_a, col_b = st.columns([2,1])
                 with col_a: st.plotly_chart(nf.QualityDecayPredictor.predict_decay_curve(result['score'], result['days']), use_container_width=True)
@@ -628,12 +534,11 @@ def render_veg_page():
             with t2:
                 st.info("Visualizing decision logic with Grad-CAM and LIME.")
                 if 'veg_xai_data' not in st.session_state:
-                    if st.button("Generate Explanation (~10s)"):
+                    if st.button("Generate Explanation (~10s)", key="veg_xai_btn"):
                         with st.spinner("Computing..."):
                             hm, _ = xai.grad_cam(result['img_pre'])
                             focus = xai.analyze_heatmap_focus(hm)
-                            # Target Freshness Head (Index 1) for LIME
-                            lime = xai.lime_explanation(result['img_orig'], target_head=1, num_samples=50) # Use img_orig
+                            lime = xai.lime_explanation(result['img_orig'], target_head=1, num_samples=50) 
                             st.session_state['veg_xai_data'] = {'hm': hm, 'focus': focus, 'lime': lime}
                             st.rerun()
                 else:
@@ -643,13 +548,11 @@ def render_veg_page():
                     r1, r2 = st.columns(2)
                     with r1:
                         st.image(v_grad, caption="Grad-CAM Attention", use_container_width=True, clamp=True)
-                        grad_text = nf.XAITextGenerator.explain_gradcam(result['food'], result['status'], xd['focus'])
-                        st.markdown(f"<div class='xai-box'>{grad_text}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='xai-box'>{nf.XAITextGenerator.explain_gradcam(result['food'], result['status'], xd['focus'])}</div>", unsafe_allow_html=True)
                     with r2:
                         st.image(v_lime, caption="LIME Features", use_container_width=True, clamp=True)
-                        lime_text = nf.XAITextGenerator.explain_lime(result['food'], result['status'])
-                        st.markdown(f"<div class='xai-box'>{lime_text}</div>", unsafe_allow_html=True)
-                    if st.button("Reset Explanation"): del st.session_state['veg_xai_data']; st.rerun()
+                        st.markdown(f"<div class='xai-box'>{nf.XAITextGenerator.explain_lime(result['food'], result['status'])}</div>", unsafe_allow_html=True)
+                    if st.button("Reset Explanation", key="veg_reset"): del st.session_state['veg_xai_data']; st.rerun()
 
             with t3:
                  co2, miles = nf.CarbonFootprintCalculator.calculate_impact(result['food'], 0.5)
@@ -658,79 +561,54 @@ def render_veg_page():
 
 # --- PAGE: BAKERY MODULE ---
 def render_bakery_page():
-    if st.button("← Back to Dashboard"):
-        navigate_to("home")
-
+    if st.button("← Back to Dashboard"): navigate_to("home")
     st.markdown("## 🍞 Bakery Quality Analysis")
 
-    if 'bakery_model' not in res:
-        st.error("Bakery model missing or failed to load. Ensure 'msff_bread_model.keras' is in `final_src`.")
-        return
-
-    model = res['bakery_model']
-    xai = res['bakery_xai']
+    res = load_domain_model("Bakery")
+    model, xai = res['bakery_model'], res['bakery_xai']
 
     c_side, c_main = st.columns([1, 2])
-
     with c_side:
         st.markdown("### Input Source")
         mode = st.radio("Select:", ["Upload Image", "Live Camera"], label_visibility="collapsed", key="bake_mode")
-
-        img_file = None
-        if mode == "Upload Image":
-            img_file = st.file_uploader("Upload", type=['jpg','png','jpeg'], key="bake_upload")
-        else:
-            img_file = st.camera_input("Capture", key="bake_cam")
+        img_file = st.file_uploader("Upload", type=['jpg','png','jpeg'], key="bake_upload") if mode == "Upload Image" else st.camera_input("Capture", key="bake_cam")
 
         if img_file:
             image_pil = Image.open(img_file)
             st.image(image_pil, caption="Sample", use_container_width=True)
             analyze = st.button("🔬 Analyze Bakery", type="primary", use_container_width=True)
-        else:
-            analyze = False
+        else: analyze = False
 
     with c_main:
         if img_file and analyze:
             with st.spinner("🍞 Analyzing Bakery Freshness..."):
                 img_batch, img_orig = preprocess_bakery(image_pil)
-
-                # Inference
                 days_reg = model.predict(img_batch, verbose=0)[0][0]
-
-                # Logic
                 shelf_life = max(0.0, float(days_reg))
                 status, color = get_bakery_freshness(shelf_life)
                 food = "Bread"
 
-                # Logic Fix
                 score = min(1.0, shelf_life / 14.0)
                 if status == 'Fresh' or status == 'Medium': score = max(score, 0.45)
-
                 grade, _ = get_grade(score, status)
                 expiry_str = (datetime.now() + timedelta(days=float(shelf_life))).strftime("%b %d")
 
                 st.session_state['bake_res'] = {
                     'food': food, 'status': status, 'days': shelf_life,
                     'score': score, 'grade': grade, 'color': color, 'expiry': expiry_str,
-                    'img_pre': img_batch[0], # Pass 3D array for XAI
-                    'img_orig': img_orig,
-                    'stat_idx': 0 # Dummy index for regression XAI
+                    'img_pre': img_batch[0], 'img_orig': img_orig, 'stat_idx': 0 
                 }
                 if 'bake_xai_data' in st.session_state: del st.session_state['bake_xai_data']
 
         if 'bake_res' in st.session_state:
             result = st.session_state['bake_res']
-
             m1, m2, m3 = st.columns(3)
             m1.markdown(f"<div class='metric-container'><h4>Detected</h4><h2 style='color:#1E3A5F'>{result['food']}</h2></div>", unsafe_allow_html=True)
             m2.markdown(f"<div class='metric-container' style='border-bottom: 5px solid {result['color']}'><h4>Condition</h4><h2 style='color:{result['color']}'>{result['status']}</h2></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='metric-container'><h4>Shelf Life</h4><h2>{result['days']:.1f} Days</h2><small>Exp: {result['expiry']}</small></div>", unsafe_allow_html=True)
-
             st.markdown("---")
 
-            # UNIFIED TABS for Bakery
             t1, t2, t3 = st.tabs(["📉 Projections", "🧠 Explainable AI", "🌍 Sustainability"])
-
             with t1:
                 col_a, col_b = st.columns([2,1])
                 with col_a: st.plotly_chart(nf.QualityDecayPredictor.predict_decay_curve(result['score'], result['days']), use_container_width=True)
@@ -742,11 +620,11 @@ def render_bakery_page():
             with t2:
                 st.info("Visualizing decision logic with Grad-CAM and LIME.")
                 if 'bake_xai_data' not in st.session_state:
-                    if st.button("Generate Explanation (~10s)"):
+                    if st.button("Generate Explanation (~10s)", key="bake_btn"):
                         with st.spinner("Computing..."):
                             hm, _ = xai.grad_cam(result['img_pre'])
                             focus = xai.analyze_heatmap_focus(hm)
-                            lime = xai.lime_explanation(result['img_orig'], num_samples=50) # Use img_orig
+                            lime = xai.lime_explanation(result['img_orig'], num_samples=50) 
                             st.session_state['bake_xai_data'] = {'hm': hm, 'focus': focus, 'lime': lime}
                             st.rerun()
                 else:
@@ -756,13 +634,11 @@ def render_bakery_page():
                     r1, r2 = st.columns(2)
                     with r1:
                         st.image(v_grad, caption="Grad-CAM (Attention)", use_container_width=True, clamp=True)
-                        grad_text = nf.XAITextGenerator.explain_gradcam(result['food'], result['status'], xd['focus'])
-                        st.markdown(f"<div class='xai-box'>{grad_text}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='xai-box'>{nf.XAITextGenerator.explain_gradcam(result['food'], result['status'], xd['focus'])}</div>", unsafe_allow_html=True)
                     with r2:
                         st.image(v_lime, caption="LIME Features", use_container_width=True, clamp=True)
-                        lime_text = nf.XAITextGenerator.explain_lime(result['food'], result['status'])
-                        st.markdown(f"<div class='xai-box'>{lime_text}</div>", unsafe_allow_html=True)
-                    if st.button("Reset Explanation"): del st.session_state['bake_xai_data']; st.rerun()
+                        st.markdown(f"<div class='xai-box'>{nf.XAITextGenerator.explain_lime(result['food'], result['status'])}</div>", unsafe_allow_html=True)
+                    if st.button("Reset Explanation", key="bake_reset"): del st.session_state['bake_xai_data']; st.rerun()
 
             with t3:
                  co2, miles = nf.CarbonFootprintCalculator.calculate_impact(result['food'], 0.5)
@@ -771,88 +647,57 @@ def render_bakery_page():
 
 # --- PAGE: FRUIT MODULE ---
 def render_fruit_page():
-    if st.button("← Back to Dashboard"):
-        navigate_to("home")
-
+    if st.button("← Back to Dashboard"): navigate_to("home")
     st.markdown("## 🍎 Fruit Quality Analysis")
 
-    if 'fruit_model' not in res:
-        st.error("Fruit model missing or failed to load. Ensure 'fruit_shelf_life_model.h5' is in `final_src`.")
-        return
-
-    model = res['fruit_model']
-    fruit_classes = res['fruit_classes']
-    xai = res['fruit_xai']
+    res = load_domain_model("Fruit")
+    model, classes, xai = res['fruit_model'], res['fruit_classes'], res['fruit_xai']
 
     c_side, c_main = st.columns([1, 2])
-
     with c_side:
         st.markdown("### Input Source")
         mode = st.radio("Select:", ["Upload Image", "Live Camera"], label_visibility="collapsed", key="fruit_mode")
-
-        img_file = None
-        if mode == "Upload Image":
-            img_file = st.file_uploader("Upload", type=['jpg','png','jpeg'], key="fruit_upload")
-        else:
-            img_file = st.camera_input("Capture", key="fruit_cam")
+        img_file = st.file_uploader("Upload", type=['jpg','png','jpeg'], key="fruit_upload") if mode == "Upload Image" else st.camera_input("Capture", key="fruit_cam")
 
         if img_file:
             image_pil = Image.open(img_file)
             st.image(image_pil, caption="Sample", use_container_width=True)
             analyze = st.button("🔬 Analyze Fruit", type="primary", use_container_width=True)
-        else:
-            analyze = False
+        else: analyze = False
 
     with c_main:
         if img_file and analyze:
             with st.spinner("🍎 Analyzing Fruit Freshness..."):
-                # Preprocess for Fruit Model (160x160)
                 img_batch, img_orig = preprocess_fruit(image_pil)
-
-                # Inference
                 fruit_pred, fresh_pred, days_pred = model.predict(img_batch, verbose=0)
-
-                # Decode
+                
                 fruit_idx = np.argmax(fruit_pred)
-                food = fruit_classes[fruit_idx]
-
-                # Freshness Logic (from snippet: < 0.5 is fresh)
+                food = classes[fruit_idx]
                 status = "Fresh" if fresh_pred[0][0] < 0.5 else "Spoiled"
                 shelf_life = max(0.0, float(days_pred[0][0]))
 
-                # Color logic
                 color = "#06d6a0" if status == "Fresh" else "#ef476f"
                 expiry_str = (datetime.now() + timedelta(days=float(shelf_life))).strftime("%b %d")
-
-                # Fake score for consistency
                 score = 0.9 if status == "Fresh" else 0.1
                 grade, _ = get_grade(score, status)
-
                 stat_idx = 0 if status == "Fresh" else 1
 
                 st.session_state['fruit_res'] = {
                     'food': food, 'status': status, 'days': shelf_life,
                     'score': score, 'color': color, 'expiry': expiry_str,
-                    'img_pre': img_batch[0], # Pass for XAI
-                    'img_orig': img_orig,
-                    'stat_idx': stat_idx,
-                    'grade': grade
+                    'img_pre': img_batch[0], 'img_orig': img_orig, 'stat_idx': stat_idx, 'grade': grade
                 }
                 if 'fruit_xai_data' in st.session_state: del st.session_state['fruit_xai_data']
 
         if 'fruit_res' in st.session_state:
             result = st.session_state['fruit_res']
-
             m1, m2, m3 = st.columns(3)
             m1.markdown(f"<div class='metric-container'><h4>Detected</h4><h2 style='color:#1E3A5F'>{result['food']}</h2></div>", unsafe_allow_html=True)
             m2.markdown(f"<div class='metric-container' style='border-bottom: 5px solid {result['color']}'><h4>Condition</h4><h2 style='color:{result['color']}'>{result['status']}</h2></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='metric-container'><h4>Shelf Life</h4><h2>{result['days']:.1f} Days</h2><small>Exp: {result['expiry']}</small></div>", unsafe_allow_html=True)
-
             st.markdown("---")
 
-            # UNIFIED TABS for Fruit
             t1, t2, t3 = st.tabs(["📉 Projections", "🧠 Explainable AI", "🌍 Sustainability"])
-
             with t1:
                 col_a, col_b = st.columns([2,1])
                 with col_a: st.plotly_chart(nf.QualityDecayPredictor.predict_decay_curve(result['score'], result['days']), use_container_width=True)
@@ -864,43 +709,34 @@ def render_fruit_page():
             with t2:
                 st.info("Visualizing decision logic with Grad-CAM and LIME.")
                 if 'fruit_xai_data' not in st.session_state:
-                    if st.button("Generate Explanation (~10s)"):
+                    if st.button("Generate Explanation (~10s)", key="fruit_btn"):
                         with st.spinner("Computing..."):
-                            # Target Freshness Head (Index 1) for Fruit model
                             hm, _ = xai.grad_cam(result['img_pre'])
                             focus = xai.analyze_heatmap_focus(hm)
-                            lime = xai.lime_explanation(result['img_orig'], target_head=1, num_samples=50) # Use img_orig
+                            lime = xai.lime_explanation(result['img_orig'], target_head=1, num_samples=50) 
                             st.session_state['fruit_xai_data'] = {'hm': hm, 'focus': focus, 'lime': lime}
                             st.rerun()
                 else:
                     xd = st.session_state['fruit_xai_data']
                     v_grad = xai.visualize_grad_cam(result['img_pre'], xd['hm'], alpha=0.4)
-                    v_lime = xai.visualize_lime(xd['lime'], result['stat_idx'], num_features=5) # Fixed index
+                    v_lime = xai.visualize_lime(xd['lime'], result['stat_idx'], num_features=5) 
                     r1, r2 = st.columns(2)
                     with r1:
                         st.image(v_grad, caption="Grad-CAM (Attention)", use_container_width=True, clamp=True)
-                        grad_text = nf.XAITextGenerator.explain_gradcam(result['food'], result['status'], xd['focus'])
-                        st.markdown(f"<div class='xai-box'>{grad_text}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='xai-box'>{nf.XAITextGenerator.explain_gradcam(result['food'], result['status'], xd['focus'])}</div>", unsafe_allow_html=True)
                     with r2:
                         st.image(v_lime, caption="LIME Features", use_container_width=True, clamp=True)
-                        lime_text = nf.XAITextGenerator.explain_lime(result['food'], result['status'])
-                        st.markdown(f"<div class='xai-box'>{lime_text}</div>", unsafe_allow_html=True)
-                    if st.button("Reset Explanation"): del st.session_state['fruit_xai_data']; st.rerun()
+                        st.markdown(f"<div class='xai-box'>{nf.XAITextGenerator.explain_lime(result['food'], result['status'])}</div>", unsafe_allow_html=True)
+                    if st.button("Reset Explanation", key="fruit_reset"): del st.session_state['fruit_xai_data']; st.rerun()
 
             with t3:
                  co2, miles = nf.CarbonFootprintCalculator.calculate_impact(result['food'], 0.5)
                  st.metric("Estimated Footprint", f"~0.3 kg CO2e", delta="Low Impact")
                  st.markdown(f"<div class='xai-box' style='border-left-color: #28a745'>{nf.CarbonFootprintCalculator.generate_impact_text(result['food'], co2)}</div>", unsafe_allow_html=True)
 
-
 # --- MAIN ROUTER ---
-if st.session_state['page'] == 'home':
-    render_home()
-elif st.session_state['page'] == 'meat':
-    render_meat_page()
-elif st.session_state['page'] == 'fruit':
-    render_fruit_page()
-elif st.session_state['page'] == 'veg':
-    render_veg_page()
-elif st.session_state['page'] == 'bakery':
-    render_bakery_page()
+if st.session_state['page'] == 'home': render_home()
+elif st.session_state['page'] == 'meat': render_meat_page()
+elif st.session_state['page'] == 'fruit': render_fruit_page()
+elif st.session_state['page'] == 'veg': render_veg_page()
+elif st.session_state['page'] == 'bakery': render_bakery_page()
