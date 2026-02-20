@@ -14,6 +14,42 @@ import sys
 import base64
 from datetime import datetime, timedelta
 from tensorflow.keras import layers, models
+import gdown
+
+# --- FUNCTION TO DOWNLOAD AND CACHE MODELS ---
+@st.cache_resource  # VERY IMPORTANT: This stops the app from reloading the model on every click
+def load_model(food_category):
+    if food_category == "Meat":
+        model_path = "EfficientNetB4_Meat_Model.keras"
+        # Extract the ID from your Google Drive shareable link
+        file_id = 'https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing' 
+    elif food_category == "Fruit":
+        model_path = "MobileNetV2_Fruit_Model.h5"
+        file_id = 'https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing'
+    elif food_category == "Bakery":
+        model_path = "Msff_Bread_Model.keras"
+        file_id = 'https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing'
+    elif food_category == "Vegetable":
+        model_path = "EfficientNetB0_Vegetable_Model.pth"
+        file_id = 'https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing'
+    # ... add others ...
+
+    # Download if it doesn't exist locally on the server
+    if not os.path.exists(model_path):
+        with st.spinner(f"Downloading {food_category} model... (This happens only once)"):
+            url = f'https://drive.google.com/uc?id={file_id}'
+            gdown.download(url, model_path, quiet=False)
+            
+    # Load the model
+    model = tf.keras.models.load_model(model_path)
+    return model
+
+# --- YOUR APP LOGIC ---
+st.title("Interpretable SmartShelf 🍎🥩")
+option = st.selectbox("Select Food Category", ["Meat", "Fruit", "Vegetable", "Bakery"])
+
+# Only load the model the user selects (Saves RAM!)
+model = load_model(option)
 
 # --- SETUP PATHS ---
 sys.path.append('/content/drive/MyDrive/Shelf_Life_Project/source')
