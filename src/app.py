@@ -81,11 +81,11 @@ def load_domain_model(category):
     
     if category == "Meat":
         model_path = "weights/final_smartshelf_model.keras"
-        file_id = 'https://drive.google.com/file/d/1iGbuItsDJYTIlp_mGNu1jB3w1w4aH7Zu/view?usp=sharing' # <-- REPLACE THIS
+        file_id = '1iGbuItsDJYTIlp_mGNu1jB3w1w4aH7Zu' # <-- REPLACE THIS
         
         if not os.path.exists(model_path):
             with st.spinner("Downloading Meat model... (~100MB)"):
-                gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+                gdown.download(id=file_id, output=model_path, quiet=False, fuzzy=True)
         
         res['meat_model'] = tf.keras.models.load_model(model_path, compile=False)
         # Using hardcoded classes to prevent missing .npy file errors in cloud
@@ -95,11 +95,11 @@ def load_domain_model(category):
         
     elif category == "Veg":
         model_path = "weights/best_multitask_model3.pth"
-        file_id = 'https://drive.google.com/file/d/1vrAQ6Z0Yj07E4MXR8csQAIBTHuOyskm9/view?usp=sharing' # <-- REPLACE THIS
+        file_id = '1vrAQ6Z0Yj07E4MXR8csQAIBTHuOyskm9' # <-- REPLACE THIS
         
         if not os.path.exists(model_path):
             with st.spinner("Downloading Vegetable model..."):
-                gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+                gdown.download(id=file_id, output=model_path, quiet=False, fuzzy=True)
         
         checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
         veg_classes = ['Carrot', 'Cucumber', 'Tomato', 'Potato', 'Brinjal', 'Capsicum']
@@ -113,11 +113,11 @@ def load_domain_model(category):
 
     elif category == "Bakery":
         model_path = "weights/msff_bread_model.keras"
-        file_id = 'https://drive.google.com/file/d/1BKFj01kMBeF7zhOo-ew5dMQkPqEBDWPo/view?usp=sharing' # <-- REPLACE THIS
+        file_id = '1BKFj01kMBeF7zhOo-ew5dMQkPqEBDWPo' # <-- REPLACE THIS
         
         if not os.path.exists(model_path):
             with st.spinner("Downloading Bakery model..."):
-                gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+                gdown.download(id=file_id, output=model_path, quiet=False, fuzzy=True)
         try:
             res['bakery_model'] = tf.keras.models.load_model(model_path, compile=False)
         except:
@@ -128,11 +128,11 @@ def load_domain_model(category):
 
     elif category == "Fruit":
         model_path = "weights/fruit_shelf_life_model.h5"
-        file_id = 'https://drive.google.com/file/d/1dcb2XG7fAQBcwdm0Otl3R88Llbw800C8/view?usp=sharing' # <-- REPLACE THIS
+        file_id = '1dcb2XG7fAQBcwdm0Otl3R88Llbw800C8' # <-- REPLACE THIS
         
         if not os.path.exists(model_path):
             with st.spinner("Downloading Fruit model..."):
-                gdown.download(f'https://drive.google.com/uc?id={file_id}', model_path, quiet=False)
+                gdown.download(id=file_id, output=model_path, quiet=False, fuzzy=True)
                 
         res['fruit_model'] = tf.keras.models.load_model(model_path, compile=False)
         res['fruit_classes'] = ["Apple", "Banana", "Guava", "Orange", "Pomegranate", "Strawberry"]
