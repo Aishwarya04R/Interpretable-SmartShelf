@@ -1,5 +1,7 @@
 # Interpretable SmartShelf: AI-Driven Food Quality & Shelf-Life Prediction
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Click_Here-blue?style=for-the-badge&logo=streamlit)](https://interpretable-smartshelf-ai.streamlit.app/)
+
 **SmartShelf** is a multi-modal deep learning framework designed to reduce food waste by accurately predicting the freshness and remaining shelf life of perishable foods. It covers four domains: **Meat & Seafood, Fruits, Vegetables, and Bakery**.
 
 ## Features
