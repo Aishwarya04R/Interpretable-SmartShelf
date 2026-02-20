@@ -22,7 +22,7 @@ Due to file size limits, the pre-trained model weights (`.keras`, `.pth`) are ho
 **[Download Model Weights (Google Drive)](https://drive.google.com/drive/folders/1GVbJppi5fK7-DcO0LTH1hzaVdQghrR9V?usp=sharing)**
 
 ## Screenshots
-![Dashboard](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Dashboard.png)
+![Dashboard](SmarShelf-Assets/dashboard-ai.png)
 ![Input-meat](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Input-meat-model.png)
 ![Input-fruit](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Input-fruit-model.png)
 ![Input-vegetable](https://github.com/Aishwarya04R/Interpretable-SmartShelf/blob/main/SmarShelf-Assets/Input-Vegetable-model.png)
