@@ -1,5 +1,5 @@
 streamlit
-tensorflow
+tensorflow-cpu
 torch
 torchvision
 timm
@@ -11,3 +11,4 @@ plotly
 pandas
 numpy
 Pillow
+gdown
