@@ -88,34 +88,27 @@ def load_domain_model(category):
                 gdown.download(id=file_id, output=model_path, quiet=False, fuzzy=True)
         
         res['meat_model'] = tf.keras.models.load_model(model_path, compile=False)
-        # Using hardcoded classes to prevent missing .npy file errors in cloud
         res['meat_cat'] = ["Beef", "Chicken", "Crab", "Fish", "Mutton", "Pork", "Shrimp"] 
         res['meat_stat'] = ["Fresh", "Spoiled"]
         res['meat_xai'] = ExplainableAI(res['meat_model'], res['meat_cat'], backend='tensorflow')
         
-   elif category == "Veg":
+    elif category == "Veg":
         model_path = "weights/best_multitask_model3.pth"
-        file_id = '1vrAQ6Z0Yj07E4MXR8csQAIBTHuOyskm9' # <-- Keep your working Veg Drive ID here!
+        file_id = '1vrAQ6Z0Yj07E4MXR8csQAIBTHuOyskm9' # <-- REPLACE THIS
         
         if not os.path.exists(model_path):
             with st.spinner("Downloading Vegetable model..."):
                 gdown.download(id=file_id, output=model_path, quiet=False, fuzzy=True)
         
-        # Load checkpoint
         checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
-        
-        # DYNAMICALLY get the correct number of classes from the checkpoint
         veg_map = checkpoint.get("veg_map")
+        
         if veg_map:
             veg_classes = [k for k, v in sorted(veg_map.items(), key=lambda item: item[1])]
         else:
-            # Fallback if veg_map isn't saved in the file
             veg_classes = ['Carrot', 'Cucumber', 'Tomato', 'Potato', 'Brinjal', 'Capsicum']
             
-        # Initialize model with the exact number of classes the checkpoint expects
         veg_model = MultiHeadEfficientNet(num_veg_classes=len(veg_classes))
-        
-        # strict=False prevents crashes from minor library version differences
         veg_model.load_state_dict(checkpoint["model"], strict=False)
         veg_model.eval()
         
@@ -137,6 +130,7 @@ def load_domain_model(category):
             model = build_msff_regressor()
             model.load_weights(model_path)
             res['bakery_model'] = model
+            
         res['bakery_xai'] = ExplainableAI(res['bakery_model'], ['Bread'], backend='tensorflow')
 
     elif category == "Fruit":
